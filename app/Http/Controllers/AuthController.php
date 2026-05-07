@@ -23,12 +23,19 @@ class AuthController extends Controller
             ], 401);
         }
 
+        // eliminar tokens anteriores
+        $user->tokens()->delete();
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'access_token' => $token,
-            'token_type'   => 'Bearer',
-            'user'         => $user,
+            'token_type' => 'Bearer', 
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+            ]
         ]);
     }
 
@@ -41,6 +48,6 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()->delete();
 
-        return response()->json(['message' => 'Sesión cerrada correctamente.']);
+        return response()->json(['message' => 'Sesion cerrada correctamente.']);
     }
 }
