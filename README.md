@@ -1,17 +1,6 @@
 # Auth Service
 
-Este es el servicio de autenticacion de la aplicacion. Su unica responsabilidad es manejar usuarios y generar tokens de acceso. Cuando el usuario inicia sesion desde el frontend, este servicio valida las credenciales y devuelve un token que los demas servicios usan para verificar que la peticion es valida.
-
-## Como funciona dentro de la arquitectura
-
-La aplicacion esta compuesta por tres servicios independientes que se comunican entre si. Este servicio es el punto de entrada para la autenticacion. El flujo es el siguiente:
-
-1. El usuario abre el frontend y escribe su correo y contrasena
-2. El frontend envia esas credenciales a este servicio en el endpoint /api/login
-3. Este servicio valida las credenciales contra la base de datos
-4. Si son correctas genera un token con Laravel Sanctum y lo devuelve
-5. El frontend guarda ese token y lo envia en cada peticion al pieces-service
-6. El pieces-service consulta a este servicio si el token es valido antes de responder
+Este es el servicio de autenticacion del proyecto. Se encarga de manejar los usuarios y generar tokens de acceso que los demas servicios usan para verificar que las peticiones son validas. Corre en el puerto 8001.
 
 ## Tecnologias
 
@@ -30,36 +19,109 @@ Antes de instalar este proyecto necesitas tener en tu maquina:
 - MySQL
 - XAMPP o cualquier servidor local con MySQL activo
 
-## Instalacion paso a paso
+## Descripcion del servicio
+
+Este servicio es uno de tres que forman la arquitectura de microservicios del proyecto. Su unica responsabilidad es la autenticacion. No sabe nada de piezas ni de proyectos, solo maneja usuarios y tokens.
+
+Cuando el usuario inicia sesion desde el frontend este servicio valida las credenciales y genera un token con Laravel Sanctum. Ese token viaja al frontend, se guarda en el localStorage, y desde ese momento se envia automaticamente en cada peticion al pieces-service. El pieces-service a su vez consulta a este servicio para verificar si el token es valido antes de responder.
+
+---
+
+## Endpoints principales
+
+### POST /api/login
+
+No requiere token. Recibe el correo y la contrasena y devuelve un token de acceso.
+
+Body:
+
+```json
+{
+    "email": "admin@test.com",
+    "password": "password123"
+}
+```
+
+Respuesta exitosa codigo 200:
+
+```json
+{
+    "access_token": "5|v5FFuMW3Bjs2AA8IEdeEiM1EepkHtl2qPIIPpyUEcf6cfb30",
+    "token_type": "Bearer",
+    "user": {
+        "id": 3,
+        "name": "Admin",
+        "email": "admin@test.com"
+    }
+}
+```
+
+Respuesta credenciales incorrectas codigo 401:
+
+```json
+{
+    "message": "Credenciales incorrectas."
+}
+```
+
+### GET /api/me
+
+Requiere token en el header. Devuelve los datos del usuario autenticado. Este endpoint lo usa el pieces-service para verificar si un token es valido.
+
+Header: Authorization: Bearer TU_TOKEN
+
+### POST /api/logout
+
+Requiere token en el header. Elimina el token de la base de datos.
+
+Header: Authorization: Bearer TU_TOKEN
+
+Respuesta:
+
+```json
+{
+    "message": "Sesion cerrada correctamente."
+}
+```
+
+
+## Variables de entorno
+
+APP_NAME - nombre de la aplicacion - AuthService
+APP_TIMEZONE - zona horaria - America/Bogota
+DB_CONNECTION - motor de base de datos - mysql
+DB_HOST - host de MySQL - 127.0.0.1
+DB_PORT - puerto de MySQL - 3306
+DB_DATABASE - nombre de la base de datos - auth_service
+DB_USERNAME - usuario de MySQL - root
+DB_PASSWORD - contrasena de MySQL - vacio si no tiene contrasena
+
+
+
+## Pasos de ejecucion
 
 Paso 1 - Clona el repositorio
 
 git clone https://github.com/Andresq11/auth-service.git
-
-Paso 2 - Entra a la carpeta del proyecto
-
 cd auth-service
 
-Paso 3 - Instala las dependencias de PHP
+Paso 2 - Instala las dependencias
 
 composer install
 
-Paso 4 - Copia el archivo de configuracion
+Paso 3 - Copia el archivo de configuracion
 
-cp .env.example .env
+En Windows: copy .env.example .env
+En Mac o Linux: cp .env.example .env
 
-En Windows usa este comando en su lugar
-
-copy .env.example .env
-
-Paso 5 - Genera la clave de la aplicacion
+Paso 4 - Genera la clave de la aplicacion
 
 php artisan key:generate
 
-Paso 6 - Configura la base de datos en el archivo .env
+Paso 5 - Configura el .env
 
-Abre el archivo .env y busca estas lineas, asegurate de que queden exactamente asi
-
+APP_NAME=AuthService
+APP_TIMEZONE=America/Bogota
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
@@ -67,102 +129,87 @@ DB_DATABASE=auth_service
 DB_USERNAME=root
 DB_PASSWORD=
 
-Paso 7 - Crea la base de datos
+Paso 6 - Crea la base de datos auth_service en phpMyAdmin con cotejamiento utf8mb4_general_ci
 
-Abre phpMyAdmin en http://localhost/phpmyadmin y crea una base de datos llamada auth_service con cotejamiento utf8mb4_general_ci
-
-Paso 8 - Corre las migraciones
-
-Este comando crea todas las tablas necesarias en la base de datos
+Paso 7 - Corre las migraciones
 
 php artisan migrate
 
-Las tablas que se crean son users, personal_access_tokens, cache y jobs
-
-Paso 9 - Crea el usuario de prueba
+Paso 8 - Crea el usuario de prueba
 
 php artisan db:seed
 
-Esto crea un usuario con el que puedes hacer pruebas
+Usuario: admin@test.com
+Password: password123
 
-Paso 10 - Levanta el servidor
+Paso 9 - Levanta el servidor
 
 php artisan serve --port=8001
 
-El servicio queda corriendo en http://127.0.0.1:8001
 
-## Usuario de prueba
 
-Email: admin@test.com
-Password: password123
+## Como funciona el flujo completo
 
-## Endpoints disponibles
+### El usuario inicia sesion
 
-POST /api/login
+El frontend manda una peticion POST a http://127.0.0.1:8001/api/login con el correo y la contrasena. El controlador en app/Http/Controllers/AuthController.php recibe esa peticion y hace esto:
 
-No requiere token. Recibe el correo y la contrasena y devuelve un token de acceso.
+```php
+$user = User::where('email', $request->email)->first();
 
-Body que se envia
+if (! $user || ! Hash::check($request->password, $user->password)) {
+    return response()->json(['message' => 'Credenciales incorrectas.'], 401);
+}
 
-email: admin@test.com
-password: password123
+$user->tokens()->delete();
 
-Respuesta cuando las credenciales son correctas
+$token = $user->createToken('auth_token')->plainTextToken;
+```
 
-access_token: el token generado por Sanctum
-token_type: Bearer
-user: nombre, correo y datos del usuario
+Primero busca el usuario en la base de datos. Luego verifica la contrasena con Hash::check que compara la contrasena escrita con la que esta encriptada en la base de datos. Si todo esta bien elimina los tokens anteriores del usuario para no acumularlos y genera uno nuevo con Sanctum.
 
-Respuesta cuando las credenciales son incorrectas
+Sanctum guarda el token en la tabla personal_access_tokens de la base de datos auth_service. El token se ve asi:
 
-message: Credenciales incorrectas
-codigo HTTP: 401
+5|v5FFuMW3Bjs2AA8IEdeEiM1EepkHtl2qPIIPpyUEcf6cfb30
 
-GET /api/me
+El numero antes del pipe es el ID del registro en la tabla. El frontend guarda ese token en el localStorage.
 
-Requiere token en el header. Devuelve los datos del usuario autenticado.
+### El pieces-service valida el token
 
-Header requerido: Authorization: Bearer TU_TOKEN
+Cada vez que el frontend hace una peticion al pieces-service envia el token en el header Authorization. El pieces-service antes de responder hace una peticion GET a http://127.0.0.1:8001/api/me con ese mismo token.
 
-Respuesta: id, name, email, created_at del usuario
+La ruta /api/me esta protegida por el middleware auth:sanctum en routes/api.php:
 
-POST /api/logout
+```php
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+});
+```
 
-Requiere token en el header. Revoca el token en la base de datos, lo que significa que ese token ya no servira para nada aunque alguien lo tenga guardado.
+Sanctum busca el token en la tabla personal_access_tokens. Si lo encuentra devuelve los datos del usuario con codigo 200. Si no lo encuentra devuelve 401. El pieces-service usa ese codigo para decidir si responde o no.
 
-Header requerido: Authorization: Bearer TU_TOKEN
+### El usuario cierra sesion
 
-Respuesta: message: Sesion cerrada correctamente
+El frontend manda una peticion POST a /api/logout. El servidor elimina el token de la base de datos:
 
-## Estructura de archivos importantes
+```php
+public function logout(Request $request)
+{
+    $request->user()->currentAccessToken()->delete();
+    return response()->json(['message' => 'Sesion cerrada correctamente.']);
+}
+```
 
-app/Http/Controllers/AuthController.php es el controlador principal. Tiene tres metodos: login que valida credenciales y genera el token, me que devuelve el usuario autenticado, y logout que revoca el token.
+Desde ese momento el token ya no existe en la base de datos y aunque alguien lo tenga guardado no podra usarlo porque Sanctum no lo va a encontrar.
 
-app/Models/User.php es el modelo del usuario. Tiene el trait HasApiTokens de Sanctum que es lo que permite generar y revocar tokens.
-
-routes/api.php define las tres rutas del servicio. El login es publico y las otras dos estan protegidas por el middleware auth:sanctum.
-
-database/migrations contiene las migraciones que crean las tablas en la base de datos.
-
-database/seeders/DatabaseSeeder.php crea el usuario de prueba cuando corres php artisan db:seed.
-
-bootstrap/app.php configura el proyecto incluyendo el archivo de rutas api.php.
-
-## Variables de entorno
-
-APP_NAME - Nombre de la aplicacion - AuthService
-APP_URL - URL donde corre el servicio - http://localhost:8001
-DB_CONNECTION - Motor de base de datos - mysql
-DB_HOST - Host de MySQL - 127.0.0.1
-DB_PORT - Puerto de MySQL - 3306
-DB_DATABASE - Nombre de la base de datos - auth_service
-DB_USERNAME - Usuario de MySQL - root
-DB_PASSWORD - Contrasena de MySQL - vacio si no tiene contrasena
 
 ## Decisiones tecnicas
 
-Se uso Laravel Sanctum en lugar de JWT porque Sanctum viene integrado con Laravel, no necesita paquetes externos y es suficiente para este tipo de proyecto. Cada token queda guardado en la tabla personal_access_tokens, lo que permite revocarlos en cualquier momento desde el endpoint de logout.
+Use Sanctum en lugar de JWT porque viene incluido con Laravel y no necesita paquetes externos. Cada token queda en la base de datos lo que permite eliminarlo cuando el usuario cierra sesion. Con JWT eso no se puede hacer facilmente porque el token vive en el cliente.
 
-Las rutas estan separadas en dos grupos. El grupo publico solo tiene el login. El grupo protegido tiene me y logout, y usa el middleware auth:sanctum que verifica el token antes de ejecutar cualquier accion.
+Agregue $user->tokens()->delete() antes de crear el token nuevo porque en las pruebas me di cuenta que se iban acumulando tokens viejos en la tabla personal_access_tokens cada vez que el usuario iniciaba sesion.
 
-Cada servicio tiene su propia base de datos para respetar el principio de separacion de responsabilidades en microservicios. El auth-service es el unico dueno de la informacion de los usuarios.
+Configure el timezone en America/Bogota porque por defecto Laravel usa UTC y las fechas aparecian con 5 horas de diferencia con la hora de Colombia.
+
+En Laravel 13 el archivo routes/api.php no viene configurado por defecto, entonces tuve que registrarlo manualmente en bootstrap/app.php para que las rutas de la API funcionaran.
